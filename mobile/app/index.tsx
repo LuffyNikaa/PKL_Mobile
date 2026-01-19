@@ -9,13 +9,6 @@ export default function Landing() {
       <Text style={styles.title}>Selamat Datang</Text>
 
       <TouchableOpacity
-        style={styles.button}
-        onPress={() => router.push('/register')}
-      >
-        <Text style={styles.buttonText}>Register Siswa</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
         style={[styles.button, styles.secondary]}
         onPress={() => router.push('/login')}
       >

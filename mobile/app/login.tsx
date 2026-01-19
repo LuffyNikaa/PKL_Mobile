@@ -98,14 +98,6 @@ export default function Login() {
           <Text style={styles.buttonText}>Login</Text>
         )}
       </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.linkButton}
-        onPress={() => router.push('/register')}
-        disabled={loading}
-      >
-        <Text style={styles.linkText}>Belum punya akun? Daftar disini</Text>
-      </TouchableOpacity>
     </View>
   );
 }
