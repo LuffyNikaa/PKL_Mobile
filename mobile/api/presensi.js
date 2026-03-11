@@ -1,6 +1,5 @@
 import api from './api';
 
-// Cek status absensi hari ini: 'belum' | 'sudah_masuk' | 'sudah_pulang'
 export const getStatusAbsensi = async (token) => {
   const response = await api.get('/mobile/absensi/status', {
     headers: { Authorization: `Bearer ${token}` },
@@ -8,20 +7,34 @@ export const getStatusAbsensi = async (token) => {
   return response.data.status;
 };
 
-// Absen masuk (validasi radius di frontend & backend)
+// Absen masuk — pakai FormData karena ada file upload
 export const postAbsensi = async (token, payload) => {
-  const response = await api.post('/mobile/absensi', {
-    latitude_absensi:  payload.latitude,
-    longitude_absensi: payload.longitude,
-    status_absensi:    payload.status,
-    alasan_absensi:    payload.alasan ?? null,
-  }, {
-    headers: { Authorization: `Bearer ${token}` },
+  const form = new FormData();
+  form.append('latitude_absensi',  String(payload.latitude));
+  form.append('longitude_absensi', String(payload.longitude));
+  form.append('status_absensi',    payload.status);
+
+  if (payload.alasan) {
+    form.append('alasan_absensi', payload.alasan);
+  }
+  if (payload.foto) {
+    form.append('foto_surat', {
+      uri:  payload.foto.uri,
+      name: payload.foto.name ?? 'surat.jpg',
+      type: payload.foto.type ?? 'image/jpeg',
+    });
+  }
+
+  const response = await api.post('/mobile/absensi', form, {
+    headers: {
+      Authorization:  `Bearer ${token}`,
+      'Content-Type': 'multipart/form-data',
+    },
   });
   return response.data;
 };
 
-// Absen pulang (tidak perlu lokasi)
+// Absen pulang — tidak perlu lokasi atau file
 export const postAbsensiPulang = async (token) => {
   const response = await api.post('/mobile/absensi/pulang', {}, {
     headers: { Authorization: `Bearer ${token}` },

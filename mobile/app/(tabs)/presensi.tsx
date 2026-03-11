@@ -1,9 +1,11 @@
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Modal, TextInput, Alert, ActivityIndicator,
+  Image, ScrollView,
 } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
+import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -14,23 +16,21 @@ import { getDistance } from '@/utils/location';
 type AbsenStatus = 'belum' | 'sudah_masuk' | 'sudah_pulang';
 
 export default function PresensiScreen() {
-  const [profile, setProfile]       = useState<any>(null);
-  const [userLoc, setUserLoc]       = useState<any>(null);
-  const [absenStatus, setAbsenStatus] = useState<AbsenStatus>('belum');
-  const [loading, setLoading]       = useState(false);
+  const [profile, setProfile]           = useState<any>(null);
+  const [userLoc, setUserLoc]           = useState<any>(null);
+  const [absenStatus, setAbsenStatus]   = useState<AbsenStatus>('belum');
+  const [loading, setLoading]           = useState(false);
 
-  const [izinVisible, setIzinVisible] = useState(false);
-  const [izinType, setIzinType]       = useState<'izin' | 'sakit'>('izin');
-  const [alasan, setAlasan]           = useState('');
+  const [izinVisible, setIzinVisible]   = useState(false);
+  const [izinType, setIzinType]         = useState<'izin' | 'sakit'>('izin');
+  const [alasan, setAlasan]             = useState('');
+  const [foto, setFoto]                 = useState<any>(null);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     const token = await AsyncStorage.getItem('token');
     if (!token) return;
-
     try {
       const [prof, status, loc] = await Promise.all([
         getProfileSiswa(token),
@@ -64,14 +64,13 @@ export default function PresensiScreen() {
   const handleMasuk = async () => {
     if (!userLoc || !profile) return;
     if (!checkRadius()) return;
-
     setLoading(true);
     try {
       const token = await AsyncStorage.getItem('token');
       await postAbsensi(token, {
-        latitude: userLoc.latitude,
+        latitude:  userLoc.latitude,
         longitude: userLoc.longitude,
-        status: 'hadir',
+        status:    'hadir',
       });
       setAbsenStatus('sudah_masuk');
       Alert.alert('Berhasil', 'Presensi masuk berhasil dicatat');
@@ -106,7 +105,35 @@ export default function PresensiScreen() {
     ]);
   };
 
+  const pilihFoto = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Izin Diperlukan', 'Izinkan akses galeri untuk upload surat');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.7,
+    });
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      setFoto({
+        uri:  asset.uri,
+        name: asset.fileName ?? `surat_${Date.now()}.jpg`,
+        type: asset.mimeType ?? 'image/jpeg',
+      });
+    }
+  };
+
   const submitIzin = async () => {
+    if (!alasan.trim()) {
+      Alert.alert('Peringatan', 'Alasan wajib diisi');
+      return;
+    }
+    if (!foto) {
+      Alert.alert('Peringatan', 'Foto/surat keterangan wajib dilampirkan');
+      return;
+    }
     setLoading(true);
     try {
       const token = await AsyncStorage.getItem('token');
@@ -115,9 +142,9 @@ export default function PresensiScreen() {
         longitude: userLoc?.longitude,
         status:    izinType,
         alasan,
+        foto,
       });
-      setIzinVisible(false);
-      setAlasan('');
+      tutupModal();
       setAbsenStatus('sudah_masuk');
       Alert.alert('Berhasil', 'Izin berhasil dikirim');
     } catch (err: any) {
@@ -126,6 +153,12 @@ export default function PresensiScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const tutupModal = () => {
+    setIzinVisible(false);
+    setAlasan('');
+    setFoto(null);
   };
 
   if (!profile || !userLoc) {
@@ -139,12 +172,10 @@ export default function PresensiScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <Text style={styles.welcome}>Selamat Datang</Text>
       <Text style={styles.name}>{profile.nama}</Text>
       <Text style={styles.dudi}>{profile.dudi ?? '-'}</Text>
 
-      {/* Map */}
       <MapView
         style={styles.map}
         initialRegion={{
@@ -164,18 +195,21 @@ export default function PresensiScreen() {
         )}
       </MapView>
 
-      {/* Status info */}
       {absenStatus === 'sudah_pulang' && (
         <View style={styles.statusBox}>
           <Text style={styles.statusText}>✅ Presensi hari ini sudah lengkap</Text>
         </View>
       )}
 
-      {/* Tombol Masuk / Pulang */}
       {absenStatus === 'belum' && (
-        <TouchableOpacity style={styles.btnMasuk} onPress={handleMasuk} disabled={loading}>
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Masuk</Text>}
-        </TouchableOpacity>
+        <>
+          <TouchableOpacity style={styles.btnMasuk} onPress={handleMasuk} disabled={loading}>
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Masuk</Text>}
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.btnIzin} onPress={() => setIzinVisible(true)}>
+            <Text style={styles.btnText}>Izin / Sakit</Text>
+          </TouchableOpacity>
+        </>
       )}
 
       {absenStatus === 'sudah_masuk' && (
@@ -184,44 +218,67 @@ export default function PresensiScreen() {
         </TouchableOpacity>
       )}
 
-      {/* Tombol Izin — hanya tampil kalau belum absen */}
-      {absenStatus === 'belum' && (
-        <TouchableOpacity style={styles.btnIzin} onPress={() => setIzinVisible(true)}>
-          <Text style={styles.btnText}>Izin / Sakit</Text>
-        </TouchableOpacity>
-      )}
-
       {/* Modal Izin */}
       <Modal visible={izinVisible} transparent animationType="slide">
         <View style={styles.modalBg}>
           <View style={styles.modal}>
-            <Text style={styles.modalTitle}>Izin / Sakit</Text>
-            <View style={styles.row}>
-              <TouchableOpacity
-                style={[styles.option, izinType === 'izin' && styles.active]}
-                onPress={() => setIzinType('izin')}
-              >
-                <Text>Izin</Text>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalTitle}>Izin / Sakit</Text>
+
+              {/* Pilih tipe */}
+              <View style={styles.row}>
+                <TouchableOpacity
+                  style={[styles.option, izinType === 'izin' && styles.active]}
+                  onPress={() => setIzinType('izin')}
+                >
+                  <Text style={izinType === 'izin' ? styles.optionTextActive : styles.optionText}>Izin</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.option, izinType === 'sakit' && styles.active]}
+                  onPress={() => setIzinType('sakit')}
+                >
+                  <Text style={izinType === 'sakit' ? styles.optionTextActive : styles.optionText}>Sakit</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Alasan */}
+              <Text style={styles.label}>Alasan <Text style={styles.required}>*</Text></Text>
+              <TextInput
+                placeholder="Tulis alasan izin/sakit..."
+                style={styles.input}
+                value={alasan}
+                onChangeText={setAlasan}
+                multiline
+                numberOfLines={3}
+              />
+
+              {/* Upload foto */}
+              <Text style={styles.label}>Foto/Surat Keterangan <Text style={styles.required}>*</Text></Text>
+              <TouchableOpacity style={styles.uploadBtn} onPress={pilihFoto}>
+                <Text style={styles.uploadText}>
+                  {foto ? '📎 Ganti Foto' : '📎 Pilih Foto/Surat'}
+                </Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.option, izinType === 'sakit' && styles.active]}
-                onPress={() => setIzinType('sakit')}
-              >
-                <Text>Sakit</Text>
+
+              {/* Preview foto */}
+              {foto && (
+                <View style={styles.previewContainer}>
+                  <Image source={{ uri: foto.uri }} style={styles.preview} resizeMode="cover" />
+                  <TouchableOpacity onPress={() => setFoto(null)} style={styles.hapusFoto}>
+                    <Text style={{ color: '#EF4444', fontSize: 12 }}>✕ Hapus</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Kirim */}
+              <TouchableOpacity style={styles.submit} onPress={submitIzin} disabled={loading}>
+                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Kirim</Text>}
               </TouchableOpacity>
-            </View>
-            <TextInput
-              placeholder="Alasan"
-              style={styles.input}
-              value={alasan}
-              onChangeText={setAlasan}
-            />
-            <TouchableOpacity style={styles.submit} onPress={submitIzin} disabled={loading}>
-              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Kirim</Text>}
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setIzinVisible(false)} style={{ marginTop: 10, alignItems: 'center' }}>
-              <Text style={{ color: '#666' }}>Batal</Text>
-            </TouchableOpacity>
+
+              <TouchableOpacity onPress={tutupModal} style={styles.batalBtn}>
+                <Text style={styles.batalText}>Batal</Text>
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -239,13 +296,7 @@ const styles = StyleSheet.create({
 
   map: { height: 280, marginVertical: 16, borderRadius: 12 },
 
-  statusBox: {
-    backgroundColor: '#D1FAE5',
-    padding: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginBottom: 12,
-  },
+  statusBox:  { backgroundColor: '#D1FAE5', padding: 12, borderRadius: 10, alignItems: 'center', marginBottom: 12 },
   statusText: { color: '#065F46', fontWeight: '600' },
 
   btnMasuk:  { backgroundColor: '#16A34A', padding: 14, borderRadius: 12, alignItems: 'center', marginBottom: 10 },
@@ -254,11 +305,30 @@ const styles = StyleSheet.create({
   btnText:   { color: '#fff', fontWeight: '600', fontSize: 15 },
 
   modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' },
-  modal:   { width: '85%', backgroundColor: '#fff', padding: 20, borderRadius: 12 },
-  modalTitle: { fontSize: 18, fontWeight: '600', marginBottom: 10 },
-  row:     { flexDirection: 'row', gap: 10, marginBottom: 10 },
-  option:  { flex: 1, padding: 10, borderRadius: 8, borderWidth: 1, alignItems: 'center' },
-  active:  { backgroundColor: '#E5E7EB' },
-  input:   { borderWidth: 1, borderRadius: 8, padding: 10, marginBottom: 10 },
-  submit:  { backgroundColor: '#2563EB', padding: 12, borderRadius: 10, alignItems: 'center' },
+  modal:   { width: '90%', backgroundColor: '#fff', padding: 20, borderRadius: 16, maxHeight: '85%' },
+
+  modalTitle:       { fontSize: 18, fontWeight: '700', marginBottom: 14, color: '#111827' },
+  row:              { flexDirection: 'row', gap: 10, marginBottom: 14 },
+  option:           { flex: 1, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#D1D5DB', alignItems: 'center' },
+  active:           { backgroundColor: '#EFF6FF', borderColor: '#2563EB' },
+  optionText:       { color: '#374151' },
+  optionTextActive: { color: '#2563EB', fontWeight: '600' },
+
+  label:    { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 4 },
+  required: { color: '#EF4444' },
+  input:    { borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 8, padding: 10, marginBottom: 12, textAlignVertical: 'top' },
+
+  uploadBtn: {
+    borderWidth: 1.5, borderColor: '#2563EB', borderStyle: 'dashed',
+    borderRadius: 8, padding: 12, alignItems: 'center', marginBottom: 10,
+  },
+  uploadText: { color: '#2563EB', fontWeight: '500' },
+
+  previewContainer: { alignItems: 'center', marginBottom: 12 },
+  preview:          { width: '100%', height: 150, borderRadius: 8 },
+  hapusFoto:        { marginTop: 6 },
+
+  submit:    { backgroundColor: '#2563EB', padding: 13, borderRadius: 10, alignItems: 'center', marginBottom: 8 },
+  batalBtn:  { alignItems: 'center', padding: 8 },
+  batalText: { color: '#6B7280' },
 });
