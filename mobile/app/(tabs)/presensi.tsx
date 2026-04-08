@@ -294,7 +294,7 @@ const styles = StyleSheet.create({
   name:    { fontSize: 22, fontWeight: '700', color: '#111827' },
   dudi:    { fontSize: 13, color: '#16A34A', marginBottom: 12 },
 
-  map: { height: 280, marginVertical: 16, borderRadius: 12 },
+  map: { flex: 1, marginVertical: 16, borderRadius: 12 },
 
   statusBox:  { backgroundColor: '#D1FAE5', padding: 12, borderRadius: 10, alignItems: 'center', marginBottom: 12 },
   statusText: { color: '#065F46', fontWeight: '600' },

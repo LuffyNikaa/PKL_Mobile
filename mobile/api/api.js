@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // Ganti dengan IP server Laravel kamu
-const API_BASE_URL = 'http://10.70.2.47:8000/api';
+const API_BASE_URL = 'http://10.70.2.218:8000/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
