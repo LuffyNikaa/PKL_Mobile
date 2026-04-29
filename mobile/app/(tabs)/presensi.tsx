@@ -31,15 +31,29 @@ export default function PresensiScreen() {
   const loadData = async () => {
     const token = await AsyncStorage.getItem('token');
     if (!token) return;
+
     try {
-      const [prof, status, loc] = await Promise.all([
-        getProfileSiswa(token),
-        getStatusAbsensi(token),
-        Location.getCurrentPositionAsync({}),
-      ]);
+      // ✅ 1. Request permission dulu
+      const { status: locStatus } = await Location.requestForegroundPermissionsAsync();
+
+      if (locStatus !== 'granted') {
+        Alert.alert('Izin lokasi ditolak', 'Aktifkan izin lokasi untuk presensi');
+        return;
+      }
+
+      // ✅ 2. Ambil lokasi
+      const loc = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+
+      // ✅ 3. Ambil API (dipisah biar aman)
+      const prof = await getProfileSiswa(token);
+      const status = await getStatusAbsensi(token);
+
       setProfile(prof);
       setAbsenStatus(status as AbsenStatus);
       setUserLoc(loc.coords);
+
     } catch (err) {
       console.log('loadData error:', err);
     }
