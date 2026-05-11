@@ -37,6 +37,9 @@ export default function Login() {
       if (response && response.user) {
         // Simpan data user ke AsyncStorage
         await AsyncStorage.setItem('user', JSON.stringify(response.user));
+        if (response.siswa) {
+          await AsyncStorage.setItem('siswa', JSON.stringify(response.siswa));
+        }
         await AsyncStorage.setItem('role', response.role || 'siswa');
         await AsyncStorage.setItem('token', response.token || '');
         

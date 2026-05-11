@@ -10,11 +10,10 @@ export const getJurnalMingguan = async (token, search = '') => {
 
 export const postJurnalMingguan = async (token, payload) => {
   const form = new FormData();
-  form.append('tanggal_jurnal_mingguan',  payload.tanggal);
   form.append('kegiatan_jurnal_mingguan', payload.kegiatan);
   if (payload.dokumentasi) {
     form.append('dokumentasi_jurnal_mingguan', {
-      uri:  payload.dokumentasi.uri,
+      uri: payload.dokumentasi.uri,
       name: payload.dokumentasi.name ?? `dok_${Date.now()}.jpg`,
       type: payload.dokumentasi.type ?? 'image/jpeg',
     });
@@ -28,14 +27,16 @@ export const postJurnalMingguan = async (token, payload) => {
 export const putJurnalMingguan = async (token, id, payload) => {
   const form = new FormData();
   form.append('kegiatan_jurnal_mingguan', payload.kegiatan);
+  // ✅ Hanya append dokumentasi jika ada (tidak mengirim field kosong)
   if (payload.dokumentasi) {
     form.append('dokumentasi_jurnal_mingguan', {
-      uri:  payload.dokumentasi.uri,
+      uri: payload.dokumentasi.uri,
       name: payload.dokumentasi.name ?? `dok_${Date.now()}.jpg`,
       type: payload.dokumentasi.type ?? 'image/jpeg',
     });
   }
-  const res = await api.put(`/mobile/jurnal-mingguan/${id}`, form, {
+  // ✅ Jika tidak ada dokumentasi, jangan kirim field apapun
+  const res = await api.post(`/mobile/jurnal-mingguan/${id}?_method=PUT`, form, {
     headers: { ...headers(token), 'Content-Type': 'multipart/form-data' },
   });
   return res.data;

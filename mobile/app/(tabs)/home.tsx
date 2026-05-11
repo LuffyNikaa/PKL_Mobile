@@ -35,6 +35,7 @@ type PresentasiItem = {
 export default function Home() {
   const router = useRouter();
   const [profile, setProfile]               = useState<any>(null);
+  const [fallbackProfile, setFallbackProfile] = useState<any>(null);
   const [absenStatus, setAbsenStatus]       = useState<AbsenStatus>('belum');
   const [loading, setLoading]               = useState(true);
   const [tanggal, setTanggal]               = useState('');
@@ -54,14 +55,35 @@ export default function Home() {
   const loadData = async () => {
     const token = await AsyncStorage.getItem('token');
     if (!token) { router.replace('/'); return; }
+
+    const userItem = await AsyncStorage.getItem('user');
+    const siswaItem = await AsyncStorage.getItem('siswa');
+    setFallbackProfile({
+      ...(userItem ? JSON.parse(userItem) : {}),
+      ...(siswaItem ? JSON.parse(siswaItem) : {}),
+    });
+
     try {
       const [prof, status, monRes, presRes] = await Promise.all([
-        getProfileSiswa(token),
-        getStatusAbsensi(token),
-        getMonitoringSiswa(token),
-        getPresentasiSiswa(token),
+        getProfileSiswa(token).catch((err) => {
+          console.log('getProfileSiswa error:', err.response?.data || err.message || err);
+          return null;
+        }),
+        getStatusAbsensi(token).catch((err) => {
+          console.log('getStatusAbsensi error:', err.response?.data || err.message || err);
+          return 'belum';
+        }),
+        getMonitoringSiswa(token).catch((err) => {
+          console.log('getMonitoringSiswa error:', err.response?.data || err.message || err);
+          return { ada_jadwal: false, data: [] };
+        }),
+        getPresentasiSiswa(token).catch((err) => {
+          console.log('getPresentasiSiswa error:', err.response?.data || err.message || err);
+          return { ada_jadwal: false, data: [] };
+        }),
       ]);
-      setProfile(prof);
+
+      if (prof) setProfile(prof);
       setAbsenStatus(status as AbsenStatus);
       setMonitoringList(monRes.data ?? []);
       setAdaMonitoring(monRes.ada_jadwal ?? false);
@@ -89,6 +111,14 @@ export default function Home() {
   };
   const absen = absenLabel();
 
+  const profileData = {
+    nama: profile?.nama ?? profile?.nama_siswa ?? fallbackProfile?.nama ?? fallbackProfile?.nama_siswa ?? '-',
+    dudi: profile?.dudi ?? profile?.nama_dudi ?? profile?.tempat_pkl ?? fallbackProfile?.dudi ?? fallbackProfile?.nama_dudi ?? fallbackProfile?.tempat_pkl ?? null,
+    jurusan: profile?.jurusan ?? profile?.jurusan_siswa ?? fallbackProfile?.jurusan ?? fallbackProfile?.jurusan_siswa ?? '-',
+    kelas: profile?.kelas ?? profile?.kelas_siswa ?? fallbackProfile?.kelas ?? fallbackProfile?.kelas_siswa ?? '-',
+  };
+  const dudiLabel = profileData.dudi ?? 'Belum ditempatkan';
+
   const statusCfg = (s: string) => s === 'dijadwalkan'
     ? { label: 'Dijadwalkan', color: '#F97316', bg: '#FFF7ED' }
     : { label: 'Selesai',     color: '#16A34A', bg: '#F0FDF4' };
@@ -103,8 +133,8 @@ export default function Home() {
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerSub}>Selamat Datang 👋</Text>
-          <Text style={styles.headerName}>{profile?.nama ?? '-'}</Text>
-          <Text style={styles.headerDudi}>{profile?.dudi ?? '-'}</Text>
+          <Text style={styles.headerName}>{profileData.nama}</Text>
+          <Text style={styles.headerDudi}>{dudiLabel}</Text>
           <View style={styles.tanggalBox}>
             <Ionicons name="calendar-outline" size={13} color="#6B7280" />
             <Text style={styles.tanggalText}>{tanggal}</Text>
@@ -159,13 +189,6 @@ export default function Home() {
         <Text style={styles.sectionTitle}>Menu</Text>
         <View style={styles.menuGrid}>
 
-          {/* <TouchableOpacity style={styles.menuCard} onPress={() => router.push('/(tabs)/presensi')}>
-            <View style={[styles.menuIcon, { backgroundColor: '#DCFCE7' }]}>
-              <Ionicons name="finger-print" size={26} color="#16A34A" />
-            </View>
-            <Text style={styles.menuLabel}>Presensi</Text>
-          </TouchableOpacity> */}
-
           <TouchableOpacity style={styles.menuCard} onPress={() => router.push('/(tabs)/jurnal_harian')}>
             <View style={[styles.menuIcon, { backgroundColor: '#DBEAFE' }]}>
               <Ionicons name="document-text" size={26} color="#2563EB" />
@@ -210,12 +233,12 @@ export default function Home() {
           <View style={[styles.infoCard, { backgroundColor: '#F0FDF4' }]}>
             <Ionicons name="school-outline" size={20} color="#16A34A" />
             <Text style={styles.infoCardLabel}>Jurusan</Text>
-            <Text style={styles.infoCardValue}>{profile?.jurusan ?? '-'}</Text>
+            <Text style={styles.infoCardValue}>{profileData.jurusan}</Text>
           </View>
-          <View style={[styles.infoCard, { backgroundColor: '#EFF6FF' }]}>
+          <View style={[styles.infoCard, { backgroundColor: '#EFF6FF' }]}> 
             <Ionicons name="people-outline" size={20} color="#2563EB" />
             <Text style={styles.infoCardLabel}>Kelas</Text>
-            <Text style={styles.infoCardValue}>{profile?.kelas ?? '-'}</Text>
+            <Text style={styles.infoCardValue}>{profileData.kelas}</Text>
           </View>
         </View>
 

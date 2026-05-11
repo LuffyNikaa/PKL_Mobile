@@ -22,27 +22,54 @@ type JurnalMingguan = {
   bisa_edit: boolean;
 };
 
-const todayString = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const getCurrentWeekRange = () => {
+  const now = new Date();
+  const day = now.getDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + diffToMonday);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  
+  const formatDate = (date: Date) => {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  };
+  
+  return {
+    monday: formatDate(monday),
+    sunday: formatDate(sunday),
+  };
+};
+
+const parseRangeTanggal = (range: string) => {
+  const parts = range.split(' s/d ');
+  if (parts.length !== 2) return null;
+  const [start, end] = parts.map((part) => new Date(part.trim()));
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  return { start, end };
+};
+
+const canEditJurnal = (item: JurnalMingguan) => {
+  if (item.bisa_edit) return true;
+  const range = parseRangeTanggal(item.range_tanggal);
+  if (!range) return false;
+  const now = new Date();
+  return now >= range.start && now <= range.end;
 };
 
 export default function JurnalMingguanScreen() {
-  const [profile, setProfile]         = useState<any>(null);
-  const [jurnal, setJurnal]           = useState<JurnalMingguan[]>([]);
-  const [loading, setLoading]         = useState(true);
-  const [search, setSearch]           = useState('');
-  const [submitting, setSubmitting]   = useState(false);
+  const [profile, setProfile] = useState<any>(null);
+  const [jurnal, setJurnal] = useState<JurnalMingguan[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  // Modal tambah/edit
   const [modalVisible, setModalVisible] = useState(false);
-  const [editItem, setEditItem]         = useState<JurnalMingguan | null>(null);
-  const [formTanggal, setFormTanggal]   = useState('');
+  const [editItem, setEditItem] = useState<JurnalMingguan | null>(null);
   const [formKegiatan, setFormKegiatan] = useState('');
-  const [formDok, setFormDok]           = useState<any>(null);
+  const [formDok, setFormDok] = useState<any>(null);
 
-  // Modal detail
-  const [detailItem, setDetailItem]       = useState<JurnalMingguan | null>(null);
+  const [detailItem, setDetailItem] = useState<JurnalMingguan | null>(null);
   const [detailVisible, setDetailVisible] = useState(false);
 
   useFocusEffect(useCallback(() => { loadAll(); }, []));
@@ -51,14 +78,18 @@ export default function JurnalMingguanScreen() {
     const token = await AsyncStorage.getItem('token');
     if (!token) return;
     try {
+      setLoading(true);
       const [prof, data] = await Promise.all([
         getProfileSiswa(token),
         getJurnalMingguan(token),
       ]);
       setProfile(prof);
       setJurnal(data);
-    } catch (err) {
+    } catch (err: any) {
       console.log('loadAll error:', err);
+      if (err?.response?.status === 401) {
+        Alert.alert('Sesi Habis', 'Silakan login ulang');
+      }
     } finally {
       setLoading(false);
     }
@@ -76,16 +107,18 @@ export default function JurnalMingguanScreen() {
 
   const openTambah = () => {
     setEditItem(null);
-    setFormTanggal(todayString());
     setFormKegiatan('');
     setFormDok(null);
     setModalVisible(true);
   };
 
   const openEdit = (item: JurnalMingguan) => {
+    if (!canEditJurnal(item)) {
+      Alert.alert('Tidak Bisa Edit', 'Jurnal hanya bisa diedit dalam minggu yang sama');
+      return;
+    }
     setDetailVisible(false);
     setEditItem(item);
-    setFormTanggal(item.tanggal);
     setFormKegiatan(item.kegiatan);
     setFormDok(null);
     setModalVisible(true);
@@ -104,7 +137,7 @@ export default function JurnalMingguanScreen() {
     if (!result.canceled && result.assets[0]) {
       const asset = result.assets[0];
       setFormDok({
-        uri:  asset.uri,
+        uri: asset.uri,
         name: asset.fileName ?? `dok_${Date.now()}.jpg`,
         type: asset.mimeType ?? 'image/jpeg',
       });
@@ -112,36 +145,46 @@ export default function JurnalMingguanScreen() {
   };
 
   const handleSimpan = async () => {
-    if (!formKegiatan.trim()) {
-      Alert.alert('Peringatan', 'Kegiatan wajib diisi');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const token = await AsyncStorage.getItem('token');
-      if (editItem) {
-        await putJurnalMingguan(token, editItem.id_jurnal_mingguan, {
-          kegiatan:      formKegiatan,
-          dokumentasi:   formDok,
-        });
-        Alert.alert('Berhasil', 'Jurnal mingguan berhasil diperbarui');
-      } else {
-        await postJurnalMingguan(token, {
-          tanggal:     formTanggal,
-          kegiatan:    formKegiatan,
-          dokumentasi: formDok,
-        });
-        Alert.alert('Berhasil', 'Jurnal mingguan berhasil ditambahkan');
+  if (!formKegiatan.trim()) {
+    Alert.alert('Peringatan', 'Kegiatan mingguan wajib diisi');
+    return;
+  }
+  
+  setSubmitting(true);
+  try {
+    const token = await AsyncStorage.getItem('token');
+    
+    if (editItem) {
+      // ✅ Untuk edit, hanya kirim kegiatan jika tidak ada foto baru
+      const payload: any = {
+        kegiatan: formKegiatan,
+      };
+      
+      // ✅ Hanya kirim dokumentasi jika ada file baru
+      if (formDok) {
+        payload.dokumentasi = formDok;
       }
-      setModalVisible(false);
-      loadAll();
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || 'Terjadi kesalahan';
-      Alert.alert('Gagal', msg);
-    } finally {
-      setSubmitting(false);
+      
+      await putJurnalMingguan(token, editItem.id_jurnal_mingguan, payload);
+      Alert.alert('Berhasil', 'Jurnal mingguan berhasil diperbarui');
+    } else {
+      // Untuk tambah, kirim kegiatan dan dokumentasi (jika ada)
+      await postJurnalMingguan(token, {
+        kegiatan: formKegiatan,
+        dokumentasi: formDok,
+      });
+      Alert.alert('Berhasil', 'Jurnal mingguan berhasil ditambahkan');
     }
-  };
+    
+    setModalVisible(false);
+    loadAll();
+  } catch (err: any) {
+    const msg = err?.response?.data?.message || err?.message || 'Terjadi kesalahan';
+    Alert.alert('Gagal', msg);
+  } finally {
+    setSubmitting(false);
+  }
+};
 
   const tutupModal = () => {
     setModalVisible(false);
@@ -163,6 +206,15 @@ export default function JurnalMingguanScreen() {
       <View style={styles.header}>
         <Text style={styles.headerSub}>Selamat Datang</Text>
         <Text style={styles.headerName}>{profile?.nama ?? '-'}</Text>
+        <Text style={styles.headerDudi}>{profile?.dudi ?? 'Belum ditempatkan'}</Text>
+      </View>
+
+      {/* Info minggu berjalan */}
+      <View style={styles.infoBox}>
+        <Ionicons name="calendar-clear-outline" size={14} color="#1D4ED8" />
+        <Text style={styles.infoText}>
+          Jurnal dibuat per minggu. Setelah minggu berlalu, jurnal tidak bisa diedit.
+        </Text>
       </View>
 
       {/* Search + Tambah */}
@@ -184,13 +236,17 @@ export default function JurnalMingguanScreen() {
       </View>
 
       {/* List */}
-      <Text style={styles.listLabel}>Riwayat:</Text>
+      <Text style={styles.listLabel}>Riwayat Jurnal Mingguan:</Text>
       <FlatList
         data={jurnal}
         keyExtractor={(item) => String(item.id_jurnal_mingguan)}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
-          <Text style={styles.emptyText}>Belum ada jurnal mingguan</Text>
+          <View style={styles.emptyContainer}>
+            <Ionicons name="document-text-outline" size={48} color="#D1D5DB" />
+            <Text style={styles.emptyText}>Belum ada jurnal mingguan</Text>
+            <Text style={styles.emptySubText}>Tekan tombol Tambah untuk membuat jurnal</Text>
+          </View>
         }
         renderItem={({ item }) => (
           <TouchableOpacity
@@ -198,17 +254,32 @@ export default function JurnalMingguanScreen() {
             onPress={() => { setDetailItem(item); setDetailVisible(true); }}
             activeOpacity={0.7}
           >
-            <View>
-              <Text style={styles.cardMinggu}>Minggu ke-{item.minggu_ke}</Text>
-              <Text style={styles.cardRange}>{item.range_tanggal}</Text>
+            <View style={styles.cardLeft}>
+              <View style={styles.cardIcon}>
+                <Text style={styles.cardMinggu}>{item.minggu_ke}</Text>
+              </View>
+              <View>
+                <Text style={styles.cardRange}>{item.range_tanggal}</Text>
+                <Text 
+                  style={styles.cardKegiatan} 
+                  numberOfLines={1}
+                >
+                  {item.kegiatan}
+                </Text>
+              </View>
             </View>
+            {canEditJurnal(item) && (
+              <View style={styles.editBadge}>
+                <Text style={styles.editBadgeText}>Bisa edit</Text>
+              </View>
+            )}
             <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
           </TouchableOpacity>
         )}
       />
 
       {/* ===== MODAL TAMBAH / EDIT ===== */}
-      <Modal visible={modalVisible} transparent animationType="slide">
+      <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={tutupModal}>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalOverlay}
@@ -220,27 +291,16 @@ export default function JurnalMingguanScreen() {
                 {editItem ? `Edit Jurnal Minggu ke-${editItem.minggu_ke}` : 'Tambah Jurnal Mingguan'}
               </Text>
 
-              {/* Tanggal — hanya saat tambah */}
+              {/* Info minggu */}
               {!editItem && (
-                <>
-                  <Text style={styles.inputLabel}>Tanggal <Text style={styles.required}>*</Text></Text>
-                  <View style={styles.tanggalRow}>
-                    <TextInput
-                      style={[styles.input, styles.tanggalInput]}
-                      value={formTanggal}
-                      onChangeText={setFormTanggal}
-                      placeholder="YYYY-MM-DD"
-                      keyboardType="numeric"
-                    />
-                    <TouchableOpacity style={styles.btnHariIni} onPress={() => setFormTanggal(todayString())}>
-                      <Ionicons name="calendar-outline" size={14} color="#2563EB" />
-                      <Text style={styles.btnHariIniText}>Hari Ini</Text>
-                    </TouchableOpacity>
-                  </View>
-                </>
+                <View style={styles.rangeBox}>
+                  <Ionicons name="calendar-outline" size={14} color="#2563EB" />
+                  <Text style={styles.rangeText}>
+                    Minggu ini: {getCurrentWeekRange().monday} s/d {getCurrentWeekRange().sunday}
+                  </Text>
+                </View>
               )}
 
-              {/* Range info saat edit */}
               {editItem && (
                 <View style={styles.rangeBox}>
                   <Ionicons name="calendar-outline" size={14} color="#2563EB" />
@@ -249,7 +309,9 @@ export default function JurnalMingguanScreen() {
               )}
 
               {/* Kegiatan */}
-              <Text style={styles.inputLabel}>Kegiatan Minggu Ini <Text style={styles.required}>*</Text></Text>
+              <Text style={styles.inputLabel}>
+                Kegiatan Minggu Ini <Text style={styles.required}>*</Text>
+              </Text>
               <TextInput
                 style={[styles.input, styles.inputArea]}
                 value={formKegiatan}
@@ -261,7 +323,9 @@ export default function JurnalMingguanScreen() {
               />
 
               {/* Dokumentasi */}
-              <Text style={styles.inputLabel}>Dokumentasi <Text style={styles.optional}>(opsional)</Text></Text>
+              <Text style={styles.inputLabel}>
+                Dokumentasi Foto <Text style={styles.optional}>(opsional)</Text>
+              </Text>
               <TouchableOpacity style={styles.uploadBtn} onPress={pilihFoto}>
                 <Ionicons name="image-outline" size={18} color="#2563EB" />
                 <Text style={styles.uploadText}>
@@ -302,14 +366,13 @@ export default function JurnalMingguanScreen() {
       </Modal>
 
       {/* ===== MODAL DETAIL ===== */}
-      <Modal visible={detailVisible} transparent animationType="slide">
+      <Modal visible={detailVisible} transparent animationType="slide" onRequestClose={() => setDetailVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalSheet}>
             <View style={styles.modalHandle} />
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={styles.modalTitle}>Minggu ke-{detailItem?.minggu_ke}</Text>
 
-              {/* Range tanggal */}
               <View style={styles.rangeBox}>
                 <Ionicons name="calendar-outline" size={14} color="#2563EB" />
                 <Text style={styles.rangeText}>{detailItem?.range_tanggal}</Text>
@@ -320,7 +383,6 @@ export default function JurnalMingguanScreen() {
                 <Text style={styles.detailText}>{detailItem?.kegiatan}</Text>
               </View>
 
-              {/* Dokumentasi */}
               {detailItem?.dokumentasi && (
                 <>
                   <Text style={styles.inputLabel}>Dokumentasi</Text>
@@ -332,8 +394,7 @@ export default function JurnalMingguanScreen() {
                 </>
               )}
 
-              {/* Tombol edit / locked */}
-              {detailItem?.bisa_edit ? (
+              {detailItem && canEditJurnal(detailItem) ? (
                 <TouchableOpacity
                   style={styles.btnSimpan}
                   onPress={() => detailItem && openEdit(detailItem)}
@@ -344,7 +405,7 @@ export default function JurnalMingguanScreen() {
               ) : (
                 <View style={styles.lockedBox}>
                   <Ionicons name="lock-closed-outline" size={14} color="#6B7280" />
-                  <Text style={styles.lockedText}>Jurnal tidak dapat diedit</Text>
+                  <Text style={styles.lockedText}>Jurnal tidak dapat diedit (minggu sudah berlalu)</Text>
                 </View>
               )}
 
@@ -366,6 +427,14 @@ const styles = StyleSheet.create({
   header:     { marginBottom: 16 },
   headerSub:  { fontSize: 14, color: '#6B7280' },
   headerName: { fontSize: 22, fontWeight: '700', color: '#111827' },
+  headerDudi: { fontSize: 13, color: '#16A34A', marginTop: 2 },
+
+  infoBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#EFF6FF', borderRadius: 8, padding: 10, marginBottom: 16,
+    borderWidth: 1, borderColor: '#BFDBFE',
+  },
+  infoText: { fontSize: 12, color: '#1D4ED8', flex: 1 },
 
   searchRow:  { flexDirection: 'row', gap: 10, marginBottom: 16, alignItems: 'center' },
   searchBox:  {
@@ -378,15 +447,26 @@ const styles = StyleSheet.create({
   btnTambahText:     { color: '#fff', fontWeight: '600', fontSize: 14 },
 
   listLabel:  { fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 8 },
-  emptyText:  { textAlign: 'center', color: '#9CA3AF', marginTop: 40 },
+  
+  emptyContainer: { alignItems: 'center', marginTop: 60 },
+  emptyText:  { textAlign: 'center', color: '#9CA3AF', marginTop: 16, fontSize: 14 },
+  emptySubText: { textAlign: 'center', color: '#D1D5DB', marginTop: 4, fontSize: 12 },
 
   card: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     backgroundColor: '#fff', paddingHorizontal: 16, paddingVertical: 14,
     borderRadius: 10, marginBottom: 8, borderWidth: 1, borderColor: '#F3F4F6',
   },
-  cardMinggu: { fontSize: 14, fontWeight: '600', color: '#111827' },
-  cardRange:  { fontSize: 12, color: '#6B7280', marginTop: 2 },
+  cardLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, gap: 12 },
+  cardIcon: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: '#EFF6FF',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  cardMinggu: { fontSize: 14, fontWeight: '700', color: '#2563EB' },
+  cardRange:  { fontSize: 13, fontWeight: '500', color: '#111827' },
+  cardKegiatan: { fontSize: 11, color: '#6B7280', marginTop: 2 },
+  editBadge: { backgroundColor: '#D1FAE5', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12, marginRight: 8 },
+  editBadgeText: { fontSize: 10, color: '#065F46' },
 
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.35)' },
   modalSheet:   {
@@ -397,16 +477,11 @@ const styles = StyleSheet.create({
   modalTitle:   { fontSize: 18, fontWeight: '700', color: '#111827', marginBottom: 14 },
 
   rangeBox:   { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#EFF6FF', borderRadius: 8, padding: 10, marginBottom: 14, borderWidth: 1, borderColor: '#BFDBFE' },
-  rangeText:  { fontSize: 13, color: '#1D4ED8', fontWeight: '500' },
+  rangeText:  { fontSize: 13, color: '#1D4ED8', fontWeight: '500', flex: 1 },
 
   inputLabel: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 4 },
   required:   { color: '#EF4444' },
   optional:   { color: '#9CA3AF', fontWeight: '400' },
-
-  tanggalRow:     { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 12 },
-  tanggalInput:   { flex: 1, marginBottom: 0 },
-  btnHariIni:     { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1.5, borderColor: '#2563EB', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9 },
-  btnHariIniText: { color: '#2563EB', fontSize: 12, fontWeight: '600' },
 
   input:         { borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 8, padding: 10, fontSize: 14, color: '#111827', marginBottom: 12 },
   inputArea:     { height: 120, textAlignVertical: 'top' },

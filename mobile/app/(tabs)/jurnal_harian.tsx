@@ -19,14 +19,6 @@ type Jurnal = {
   bisa_edit: boolean;
 };
 
-const todayString = () => {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-};
-
 export default function JurnalHarianScreen() {
   const [profile, setProfile]         = useState<any>(null);
   const [jurnal, setJurnal]           = useState<Jurnal[]>([]);
@@ -35,13 +27,10 @@ export default function JurnalHarianScreen() {
   const [submitting, setSubmitting]   = useState(false);
   const [absenStatus, setAbsenStatus] = useState<string>('belum');
 
-  // Modal tambah/edit
   const [modalVisible, setModalVisible] = useState(false);
   const [editItem, setEditItem]         = useState<Jurnal | null>(null);
-  const [formTanggal, setFormTanggal]   = useState('');
   const [formKegiatan, setFormKegiatan] = useState('');
 
-  // Modal detail
   const [detailItem, setDetailItem]       = useState<Jurnal | null>(null);
   const [detailVisible, setDetailVisible] = useState(false);
 
@@ -55,6 +44,7 @@ export default function JurnalHarianScreen() {
     const token = await AsyncStorage.getItem('token');
     if (!token) return;
     try {
+      setLoading(true);
       const [prof, data, status] = await Promise.all([
         getProfileSiswa(token),
         getJurnalHarian(token),
@@ -63,7 +53,7 @@ export default function JurnalHarianScreen() {
       setProfile(prof);
       setJurnal(data);
       setAbsenStatus(status);
-    } catch (err) {
+    } catch (err: any) {
       console.log('loadAll error:', err);
     } finally {
       setLoading(false);
@@ -77,7 +67,7 @@ export default function JurnalHarianScreen() {
     try {
       const data = await getJurnalHarian(token, text);
       setJurnal(data);
-    } catch (err) {
+    } catch (err: any) {
       console.log('search error:', err);
     }
   }, []);
@@ -87,28 +77,29 @@ export default function JurnalHarianScreen() {
       Alert.alert('Belum Absen Masuk', 'Kamu harus absen masuk terlebih dahulu sebelum mengisi jurnal harian.');
       return;
     }
+    if (absenStatus === 'sudah_pulang') {
+      Alert.alert('Sudah Absen Pulang', 'Tidak bisa mengisi jurnal setelah absen pulang.');
+      return;
+    }
     setEditItem(null);
-    setFormTanggal('');
     setFormKegiatan('');
     setModalVisible(true);
   };
 
   const openEdit = (item: Jurnal) => {
+    if (!item.bisa_edit) {
+      Alert.alert('Tidak Bisa Edit', 'Jurnal hanya bisa diedit di hari yang sama sebelum absen pulang.');
+      return;
+    }
     setDetailVisible(false);
     setEditItem(item);
-    setFormTanggal(item.tanggal);
     setFormKegiatan(item.kegiatan);
     setModalVisible(true);
   };
 
   const handleSimpan = async () => {
-    if (!formTanggal.trim() || !formKegiatan.trim()) {
-      Alert.alert('Peringatan', 'Tanggal dan kegiatan wajib diisi');
-      return;
-    }
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    if (!dateRegex.test(formTanggal)) {
-      Alert.alert('Peringatan', 'Format tanggal harus YYYY-MM-DD\nContoh: 2026-04-04');
+    if (!formKegiatan.trim()) {
+      Alert.alert('Peringatan', 'Kegiatan wajib diisi');
       return;
     }
 
@@ -122,7 +113,6 @@ export default function JurnalHarianScreen() {
         Alert.alert('Berhasil', 'Jurnal berhasil diperbarui');
       } else {
         await postJurnalHarian(token, {
-          tanggal_jurnal_harian:  formTanggal,
           kegiatan_jurnal_harian: formKegiatan,
         });
         Alert.alert('Berhasil', 'Jurnal berhasil ditambahkan');
@@ -137,6 +127,15 @@ export default function JurnalHarianScreen() {
     }
   };
 
+  const formatTanggalIndonesia = (date: Date) => {
+    return date.toLocaleDateString('id-ID', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+  };
+
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -147,13 +146,12 @@ export default function JurnalHarianScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerSub}>Selamat Datang</Text>
         <Text style={styles.headerName}>{profile?.nama ?? '-'}</Text>
+        <Text style={styles.headerDudi}>{profile?.dudi ?? 'Belum ditempatkan'}</Text>
       </View>
 
-      {/* Warning belum absen */}
       {absenStatus === 'belum' && (
         <View style={styles.warningBox}>
           <Ionicons name="warning-outline" size={16} color="#92400E" />
@@ -161,17 +159,6 @@ export default function JurnalHarianScreen() {
         </View>
       )}
 
-      {/* Info izin/sakit tidak perlu isi jurnal */}
-      {(absenStatus === 'sudah_masuk' || absenStatus === 'sudah_pulang') && (
-        <View style={[styles.warningBox, styles.infoBox]}>
-          <Ionicons name="information-circle-outline" size={16} color="#1e40af" />
-          <Text style={[styles.warningText, { color: '#1e40af' }]}>
-            Siswa izin/sakit tidak perlu mengisi jurnal harian
-          </Text>
-        </View>
-      )}
-
-      {/* Search + Tambah */}
       <View style={styles.searchRow}>
         <View style={styles.searchBox}>
           <Ionicons name="search-outline" size={18} color="#9CA3AF" />
@@ -184,16 +171,16 @@ export default function JurnalHarianScreen() {
           />
         </View>
         <TouchableOpacity
-          style={[styles.btnTambah, absenStatus === 'belum' && styles.btnTambahDisabled]}
+          style={[styles.btnTambah, (absenStatus === 'belum' || absenStatus === 'sudah_pulang') && styles.btnTambahDisabled]}
           onPress={openTambah}
+          disabled={absenStatus === 'belum' || absenStatus === 'sudah_pulang'}
         >
           <Text style={styles.btnTambahText}>Tambah</Text>
           <Ionicons name="add" size={18} color="#fff" />
         </TouchableOpacity>
       </View>
 
-      {/* List */}
-      <Text style={styles.listLabel}>Riwayat:</Text>
+      <Text style={styles.listLabel}>Riwayat Jurnal:</Text>
       <FlatList
         data={jurnal}
         keyExtractor={(item) => String(item.id_jurnal_harian)}
@@ -207,13 +194,20 @@ export default function JurnalHarianScreen() {
             onPress={() => { setDetailItem(item); setDetailVisible(true); }}
             activeOpacity={0.7}
           >
-            <Text style={styles.cardDate}>{item.tanggal_format}</Text>
+            <View style={styles.cardLeft}>
+              <Text style={styles.cardDate}>{item.tanggal_format}</Text>
+              {item.bisa_edit && (
+                <View style={styles.editBadge}>
+                  <Text style={styles.editBadgeText}>Bisa edit</Text>
+                </View>
+              )}
+            </View>
             <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
           </TouchableOpacity>
         )}
       />
 
-      {/* ===== MODAL TAMBAH / EDIT ===== */}
+      {/* Modal Tambah/Edit */}
       <Modal visible={modalVisible} transparent animationType="slide">
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -225,31 +219,15 @@ export default function JurnalHarianScreen() {
               {editItem ? 'Edit Jurnal' : 'Tambah Jurnal'}
             </Text>
 
-            {/* Tanggal */}
-            <Text style={styles.inputLabel}>
-              Tanggal <Text style={styles.required}>*</Text>
-            </Text>
-            <View style={styles.tanggalRow}>
-              <TextInput
-                style={[styles.input, styles.tanggalInput, editItem && styles.inputDisabled]}
-                value={formTanggal}
-                onChangeText={setFormTanggal}
-                placeholder="YYYY-MM-DD"
-                editable={!editItem}
-                keyboardType="numeric"
-              />
-              {!editItem && (
-                <TouchableOpacity
-                  style={styles.btnHariIni}
-                  onPress={() => setFormTanggal(todayString())}
-                >
-                  <Ionicons name="calendar-outline" size={14} color="#2563EB" />
-                  <Text style={styles.btnHariIniText}>Hari Ini</Text>
-                </TouchableOpacity>
-              )}
+            <View style={styles.infoTanggal}>
+              <Ionicons name="calendar-outline" size={14} color="#6B7280" />
+              <Text style={styles.infoTanggalText}>
+                {editItem 
+                  ? `Tanggal: ${editItem.tanggal_format}`
+                  : `Tanggal: ${formatTanggalIndonesia(new Date())}`}
+              </Text>
             </View>
 
-            {/* Kegiatan */}
             <Text style={styles.inputLabel}>
               Kegiatan <Text style={styles.required}>*</Text>
             </Text>
@@ -276,7 +254,7 @@ export default function JurnalHarianScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ===== MODAL DETAIL ===== */}
+      {/* Modal Detail */}
       <Modal visible={detailVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalSheet}>
@@ -293,7 +271,6 @@ export default function JurnalHarianScreen() {
               <Text style={styles.detailText}>{detailItem?.kegiatan}</Text>
             </View>
 
-            {/* Hanya tampil tombol Edit jika bisa_edit true */}
             {detailItem?.bisa_edit ? (
               <TouchableOpacity
                 style={styles.btnSimpan}
@@ -326,14 +303,12 @@ const styles = StyleSheet.create({
   header:     { marginBottom: 16 },
   headerSub:  { fontSize: 14, color: '#6B7280' },
   headerName: { fontSize: 22, fontWeight: '700', color: '#111827' },
+  headerDudi: { fontSize: 13, color: '#16A34A', marginTop: 2 },
 
   warningBox: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: '#FEF3C7', borderRadius: 8, padding: 10, marginBottom: 12,
     borderWidth: 1, borderColor: '#FCD34D',
-  },
-  infoBox: {
-    backgroundColor: '#EFF6FF', borderColor: '#BFDBFE',
   },
   warningText: { fontSize: 13, color: '#92400E', flex: 1 },
 
@@ -362,7 +337,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff', paddingHorizontal: 16, paddingVertical: 16,
     borderRadius: 10, marginBottom: 8, borderWidth: 1, borderColor: '#F3F4F6',
   },
+  cardLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   cardDate: { fontSize: 14, color: '#374151', fontWeight: '500' },
+  editBadge: { backgroundColor: '#EFF6FF', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 },
+  editBadgeText: { fontSize: 10, color: '#2563EB' },
 
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.35)' },
   modalSheet:   { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 36 },
@@ -372,14 +350,11 @@ const styles = StyleSheet.create({
   inputLabel:    { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 4 },
   required:      { color: '#EF4444' },
 
-  tanggalRow:     { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 12 },
-  tanggalInput:   { flex: 1, marginBottom: 0 },
-  btnHariIni:     { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1.5, borderColor: '#2563EB', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9 },
-  btnHariIniText: { color: '#2563EB', fontSize: 12, fontWeight: '600' },
+  infoTanggal: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#F3F4F6', padding: 10, borderRadius: 8, marginBottom: 12 },
+  infoTanggalText: { fontSize: 13, color: '#374151' },
 
   input:         { borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 8, padding: 10, fontSize: 14, color: '#111827', marginBottom: 12 },
   inputArea:     { height: 120, textAlignVertical: 'top' },
-  inputDisabled: { backgroundColor: '#F3F4F6', color: '#6B7280' },
 
   btnSimpan:     { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', backgroundColor: '#2563EB', padding: 13, borderRadius: 10, marginBottom: 8 },
   btnSimpanText: { color: '#fff', fontWeight: '600', fontSize: 15 },

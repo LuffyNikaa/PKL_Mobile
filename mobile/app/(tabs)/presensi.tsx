@@ -47,7 +47,19 @@ export default function PresensiScreen() {
       });
 
       // ✅ 3. Ambil API (dipisah biar aman)
-      const prof = await getProfileSiswa(token);
+      const profRaw = await getProfileSiswa(token);
+      const prof = {
+        ...profRaw,
+        dudi_lat: profRaw.dudi_lat != null ? parseFloat(profRaw.dudi_lat) : null,
+        dudi_lon: profRaw.dudi_lon != null ? parseFloat(profRaw.dudi_lon) : null,
+      };
+      const invalidCoord = (prof.dudi_lat != null && Number.isNaN(prof.dudi_lat))
+        || (prof.dudi_lon != null && Number.isNaN(prof.dudi_lon));
+      if (invalidCoord) {
+        Alert.alert('Error', 'Koordinat tempat PKL tidak valid');
+        return;
+      }
+
       const status = await getStatusAbsensi(token);
 
       setProfile(prof);
