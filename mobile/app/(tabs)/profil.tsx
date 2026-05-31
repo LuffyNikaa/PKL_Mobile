@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getProfileSiswa } from '@/api/siswa';
 import { router } from 'expo-router';
 import { updateProfile } from '@/api/profile';
+import { Ionicons } from '@expo/vector-icons';
 
 interface SiswaProfile {
   nama: string;
@@ -29,14 +30,23 @@ export default function ProfileScreen() {
   const [showEdit, setShowEdit] = useState(false);
   const [saving, setSaving]     = useState(false);
   const [form, setForm]         = useState({ nama: '', alamat: '', no_hp: '' });
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
 
   useEffect(() => { loadProfile(); }, []);
 
   const loadProfile = async () => {
     const token = await AsyncStorage.getItem('token');
-    if (!token) return;
-    const data = await getProfileSiswa(token);
-    setProfile(data);
+    if (!token) {
+      setIsLoggedIn(false);
+      return;
+    }
+    setIsLoggedIn(true);
+    try {
+      const data = await getProfileSiswa(token);
+      setProfile(data);
+    } catch (err) {
+      console.log('loadProfile error:', err);
+    }
   };
 
   const openEdit = () => {
@@ -76,9 +86,41 @@ export default function ProfileScreen() {
   };
 
   const handleLogout = async () => {
-    await AsyncStorage.removeItem('token');
-    router.replace('/login');
+    await AsyncStorage.multiRemove(['token', 'user', 'siswa', 'role']);
+    setProfile(null);
+    setIsLoggedIn(false);
   };
+
+  if (!isLoggedIn) {
+    if (isLoggedIn === null) {
+      return (
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color="#2563EB" />
+        </View>
+      );
+    }
+    return (
+      <View style={styles.loggedOutContainer}>
+        <View style={styles.loggedOutCard}>
+          <View style={styles.iconCircle}>
+            <Ionicons name="person-outline" size={40} color="#2563EB" />
+          </View>
+          <Text style={styles.loggedOutTitle}>Profil Anda</Text>
+          <Text style={styles.loggedOutSubtitle}>
+            Masuk ke akun siswa Anda untuk melihat informasi profil lengkap, status penempatan PKL, dan riwayat presensi.
+          </Text>
+          <TouchableOpacity
+            style={styles.loginBtn}
+            onPress={() => router.push('/login')}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="log-in-outline" size={18} color="#fff" style={{ marginRight: 6 }} />
+            <Text style={styles.loginBtnText}>Login Siswa</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   if (!profile) {
     return (
@@ -98,12 +140,22 @@ export default function ProfileScreen() {
     </View>
   );
 
+  const formatKelas = (kelasStr: string, jurusanStr: string) => {
+    if (!kelasStr || kelasStr === '-') return kelasStr;
+    const parts = kelasStr.trim().split(/\s+/);
+    if (parts.length === 1) return `${parts[0]}${jurusanStr && jurusanStr !== '-' ? ` ${jurusanStr}` : ''}`;
+    const level = parts[0];
+    const rombel = parts[parts.length - 1];
+    if (jurusanStr && jurusanStr !== '-') return `${level} ${jurusanStr} ${rombel}`;
+    return kelasStr;
+  };
+
   return (
     <>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.container}>
         <Image source={{ uri: avatarUrl }} style={styles.avatar} />
         <Text style={styles.name}>{profile.nama}</Text>
-        <Text style={styles.sub}>{profile.jurusan} • {profile.kelas}</Text>
+        <Text style={styles.sub}>{formatKelas(profile.kelas, profile.jurusan)}</Text>
 
         {/* Info Card */}
         <View style={styles.card}>
@@ -257,4 +309,64 @@ const styles = StyleSheet.create({
   btnSimpanText: { color: '#fff', fontWeight: '600', fontSize: 15 },
   btnBatal:      { alignItems: 'center', padding: 10 },
   btnBatalText:  { color: '#6B7280', fontSize: 14 },
+
+  // Logged out styles
+  loggedOutContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    padding: 24,
+  },
+  loggedOutCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+  },
+  iconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  loggedOutTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  loggedOutSubtitle: {
+    fontSize: 14,
+    color: '#4B5563',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  loginBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2563EB',
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 10,
+    width: '100%',
+  },
+  loginBtnText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
 });

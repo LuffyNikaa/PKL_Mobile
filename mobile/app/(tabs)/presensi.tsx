@@ -6,7 +6,9 @@ import {
 import MapView, { Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { getProfileSiswa } from '@/api/siswa';
@@ -26,7 +28,23 @@ export default function PresensiScreen() {
   const [alasan, setAlasan]             = useState('');
   const [foto, setFoto]                 = useState<any>(null);
 
-  useEffect(() => { loadData(); }, []);
+  useFocusEffect(
+    useCallback(() => {
+      const checkAuthAndLoad = async () => {
+        const token = await AsyncStorage.getItem('token');
+        if (!token) {
+          Alert.alert(
+            'Akses Dibatasi',
+            'Silakan login terlebih dahulu untuk mengakses fitur Presensi.',
+            [{ text: 'OK', onPress: () => router.replace('/(tabs)/profil') }]
+          );
+          return;
+        }
+        loadData();
+      };
+      checkAuthAndLoad();
+    }, [])
+  );
 
   const loadData = async () => {
     const token = await AsyncStorage.getItem('token');

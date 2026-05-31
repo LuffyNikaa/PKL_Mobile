@@ -1,6 +1,6 @@
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, ActivityIndicator, Modal,
+  ScrollView, ActivityIndicator, Modal, Alert,
 } from 'react-native';
 import { useState, useCallback } from 'react';
 import { useRouter } from 'expo-router';
@@ -39,6 +39,7 @@ export default function Home() {
   const [absenStatus, setAbsenStatus]       = useState<AbsenStatus>('belum');
   const [loading, setLoading]               = useState(true);
   const [tanggal, setTanggal]               = useState('');
+  const [isLoggedIn, setIsLoggedIn]         = useState(false);
 
   const [monitoringList, setMonitoringList] = useState<MonitoringItem[]>([]);
   const [adaMonitoring, setAdaMonitoring]   = useState(false);
@@ -53,8 +54,18 @@ export default function Home() {
   useFocusEffect(useCallback(() => { loadData(); }, []));
 
   const loadData = async () => {
+    const now = new Date();
+    const hari  = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+    const bulan = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+    setTanggal(`${hari[now.getDay()]}, ${now.getDate()} ${bulan[now.getMonth()]} ${now.getFullYear()}`);
+
     const token = await AsyncStorage.getItem('token');
-    if (!token) { router.replace('/'); return; }
+    if (!token) {
+      setIsLoggedIn(false);
+      setLoading(false);
+      return;
+    }
+    setIsLoggedIn(true);
 
     const userItem = await AsyncStorage.getItem('user');
     const siswaItem = await AsyncStorage.getItem('siswa');
@@ -94,13 +105,85 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-    const now = new Date();
-    const hari  = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
-    const bulan = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
-    setTanggal(`${hari[now.getDay()]}, ${now.getDate()} ${bulan[now.getMonth()]} ${now.getFullYear()}`);
   };
 
   if (loading) return <View style={styles.centered}><ActivityIndicator size="large" color="#2563EB" /></View>;
+
+  if (!isLoggedIn) {
+    return (
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.container}>
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.headerSub}>Portal PKL Siswa 👋</Text>
+          <Text style={styles.headerName}>Selamat Datang</Text>
+          <View style={styles.tanggalBox}>
+            <Ionicons name="calendar-outline" size={13} color="#6B7280" />
+            <Text style={styles.tanggalText}>{tanggal}</Text>
+          </View>
+        </View>
+
+        {/* Hero Banner */}
+        <View style={styles.heroCard}>
+          <View style={styles.heroBadge}>
+            <Ionicons name="information-circle" size={16} color="#2563EB" />
+            <Text style={styles.heroBadgeText}>Akses Terbatas</Text>
+          </View>
+          <Text style={styles.heroTitle}>Pantau Kegiatan PKL Anda Lebih Mudah</Text>
+          <Text style={styles.heroDesc}>
+            Silakan masuk untuk mengelola presensi harian, mengisi jurnal, melihat jadwal monitoring, dan presentasi magang Anda.
+          </Text>
+          <TouchableOpacity 
+            style={styles.heroBtn} 
+            onPress={() => router.push('/(tabs)/profil')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.heroBtnText}>Login Sekarang</Text>
+            <Ionicons name="log-in-outline" size={18} color="#fff" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Menu Grid (Terproteksi) */}
+        <Text style={styles.sectionTitle}>Menu Utama</Text>
+        <View style={styles.menuGrid}>
+          {[
+            { label: 'Jurnal Harian', icon: 'document-text', color: '#2563EB', bg: '#DBEAFE' },
+            { label: 'Jurnal Mingguan', icon: 'documents', color: '#7C3AED', bg: '#EDE9FE' },
+            { label: 'Monitoring', icon: 'eye', color: '#F59E0B', bg: '#FEF3C7' },
+            { label: 'Presentasi', icon: 'easel', color: '#7C3AED', bg: '#EDE9FE' }
+          ].map((item, idx) => (
+            <TouchableOpacity 
+              key={idx} 
+              style={styles.menuCard} 
+              onPress={() => {
+                Alert.alert(
+                  'Akses Dibatasi',
+                  'Silakan login terlebih dahulu untuk mengakses fitur ' + item.label + '.',
+                  [
+                    { text: 'Batal', style: 'cancel' },
+                    { text: 'Login', onPress: () => router.push('/(tabs)/profil') }
+                  ]
+                );
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.menuIcon, { backgroundColor: item.bg }]}>
+                <Ionicons name={item.icon as any} size={26} color={item.color} />
+              </View>
+              <Text style={styles.menuLabel}>{item.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Info Box */}
+        <View style={styles.infoBanner}>
+          <Ionicons name="lock-closed" size={18} color="#6B7280" />
+          <Text style={styles.infoBannerText}>
+            Beberapa fitur memerlukan autentikasi akun siswa aktif. Hubungi Administrator jika mengalami kesulitan masuk.
+          </Text>
+        </View>
+      </ScrollView>
+    );
+  }
 
   const absenLabel = () => {
     switch (absenStatus) {
@@ -116,6 +199,15 @@ export default function Home() {
     dudi: profile?.dudi ?? profile?.nama_dudi ?? profile?.tempat_pkl ?? fallbackProfile?.dudi ?? fallbackProfile?.nama_dudi ?? fallbackProfile?.tempat_pkl ?? null,
     jurusan: profile?.jurusan ?? profile?.jurusan_siswa ?? fallbackProfile?.jurusan ?? fallbackProfile?.jurusan_siswa ?? '-',
     kelas: profile?.kelas ?? profile?.kelas_siswa ?? fallbackProfile?.kelas ?? fallbackProfile?.kelas_siswa ?? '-',
+  };
+  const formatKelas = (kelasStr: string, jurusanStr: string) => {
+    if (!kelasStr || kelasStr === '-') return kelasStr;
+    const parts = kelasStr.trim().split(/\s+/);
+    if (parts.length === 1) return `${parts[0]}${jurusanStr && jurusanStr !== '-' ? ` ${jurusanStr}` : ''}`;
+    const level = parts[0];
+    const rombel = parts[parts.length - 1];
+    if (jurusanStr && jurusanStr !== '-') return `${level} ${jurusanStr} ${rombel}`;
+    return kelasStr;
   };
   const dudiLabel = profileData.dudi ?? 'Belum ditempatkan';
 
@@ -238,7 +330,7 @@ export default function Home() {
           <View style={[styles.infoCard, { backgroundColor: '#EFF6FF' }]}> 
             <Ionicons name="people-outline" size={20} color="#2563EB" />
             <Text style={styles.infoCardLabel}>Kelas</Text>
-            <Text style={styles.infoCardValue}>{profileData.kelas}</Text>
+            <Text style={styles.infoCardValue}>{formatKelas(profileData.kelas, profileData.jurusan)}</Text>
           </View>
         </View>
 
@@ -422,4 +514,77 @@ const styles = StyleSheet.create({
 
   btnTutup:     { alignItems: 'center', padding: 12, marginTop: 8 },
   btnTutupText: { color: '#6B7280', fontSize: 14 },
+
+  // New Logged Out UI styles
+  heroCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    marginBottom: 24,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+  },
+  heroBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    marginBottom: 12,
+  },
+  heroBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#2563EB',
+  },
+  heroTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 8,
+    lineHeight: 24,
+  },
+  heroDesc: {
+    fontSize: 13,
+    color: '#4B5563',
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  heroBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#2563EB',
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  heroBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  infoBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 8,
+  },
+  infoBannerText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#4B5563',
+    lineHeight: 16,
+  },
 });

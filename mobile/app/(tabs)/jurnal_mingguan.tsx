@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { useState, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
+import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
@@ -32,9 +33,9 @@ const getCurrentWeekRange = () => {
   sunday.setDate(monday.getDate() + 6);
   
   const formatDate = (date: Date) => {
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
   };
-  
+
   return {
     monday: formatDate(monday),
     sunday: formatDate(sunday),
@@ -42,11 +43,54 @@ const getCurrentWeekRange = () => {
 };
 
 const parseRangeTanggal = (range: string) => {
-  const parts = range.split(' s/d ');
+  if (!range || typeof range !== 'string') return null;
+  // accept separators: ' s/d ', '-', '–', '—'
+  const parts = range.split(/\s*(?:-|–|—|s\/d)\s*/i);
   if (parts.length !== 2) return null;
-  const [start, end] = parts.map((part) => new Date(part.trim()));
+  let [startStr, endStr] = parts.map((p) => p.trim());
+
+  // If end contains a year but start doesn't, append the year to start
+  const yearMatch = endStr.match(/(\d{4})/);
+  if (yearMatch && !/\d{4}/.test(startStr)) {
+    startStr = `${startStr} ${yearMatch[1]}`;
+  }
+
+  const start = new Date(startStr);
+  const end = new Date(endStr);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
   return { start, end };
+};
+
+const formatDateIndonesia = (date: Date) => {
+  return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+};
+
+const formatRangeIndonesia = (range: string) => {
+  const parsed = parseRangeTanggal(range);
+  if (parsed) return `${formatDateIndonesia(parsed.start)} s/d ${formatDateIndonesia(parsed.end)}`;
+
+  // fallback: translate English month names to Indonesian in the raw string
+  if (!range || typeof range !== 'string') return range;
+  const monthsMap: Record<string, string> = {
+    January: 'Januari', Jan: 'Jan',
+    February: 'Februari', Feb: 'Feb',
+    March: 'Maret', Mar: 'Mar',
+    April: 'April', Apr: 'Apr',
+    May: 'Mei',
+    June: 'Juni', Jun: 'Jun',
+    July: 'Juli', Jul: 'Jul',
+    August: 'Agustus', Aug: 'Agu',
+    September: 'September', Sep: 'Sep',
+    October: 'Oktober', Oct: 'Okt',
+    November: 'November', Nov: 'Nov',
+    December: 'Desember', Dec: 'Des',
+  };
+  let out = range;
+  Object.keys(monthsMap).forEach((eng) => {
+    const re = new RegExp(`\\b${eng}\\b`, 'g');
+    out = out.replace(re, monthsMap[eng]);
+  });
+  return out;
 };
 
 const canEditJurnal = (item: JurnalMingguan) => {
@@ -72,7 +116,23 @@ export default function JurnalMingguanScreen() {
   const [detailItem, setDetailItem] = useState<JurnalMingguan | null>(null);
   const [detailVisible, setDetailVisible] = useState(false);
 
-  useFocusEffect(useCallback(() => { loadAll(); }, []));
+  useFocusEffect(
+    useCallback(() => {
+      const checkAuthAndLoad = async () => {
+        const token = await AsyncStorage.getItem('token');
+        if (!token) {
+          Alert.alert(
+            'Akses Dibatasi',
+            'Silakan login terlebih dahulu untuk mengakses Jurnal Mingguan.',
+            [{ text: 'OK', onPress: () => router.replace('/(tabs)/profil') }]
+          );
+          return;
+        }
+        loadAll();
+      };
+      checkAuthAndLoad();
+    }, [])
+  );
 
   const loadAll = async () => {
     const token = await AsyncStorage.getItem('token');
@@ -259,7 +319,7 @@ export default function JurnalMingguanScreen() {
                 <Text style={styles.cardMinggu}>{item.minggu_ke}</Text>
               </View>
               <View>
-                <Text style={styles.cardRange}>{item.range_tanggal}</Text>
+                <Text style={styles.cardRange}>{formatRangeIndonesia(item.range_tanggal)}</Text>
                 <Text 
                   style={styles.cardKegiatan} 
                   numberOfLines={1}
@@ -295,16 +355,16 @@ export default function JurnalMingguanScreen() {
               {!editItem && (
                 <View style={styles.rangeBox}>
                   <Ionicons name="calendar-outline" size={14} color="#2563EB" />
-                  <Text style={styles.rangeText}>
-                    Minggu ini: {getCurrentWeekRange().monday} s/d {getCurrentWeekRange().sunday}
-                  </Text>
+                    <Text style={styles.rangeText}>
+                      Minggu ini: {getCurrentWeekRange().monday} s/d {getCurrentWeekRange().sunday}
+                    </Text>
                 </View>
               )}
 
               {editItem && (
                 <View style={styles.rangeBox}>
                   <Ionicons name="calendar-outline" size={14} color="#2563EB" />
-                  <Text style={styles.rangeText}>{editItem.range_tanggal}</Text>
+                  <Text style={styles.rangeText}>{formatRangeIndonesia(editItem.range_tanggal)}</Text>
                 </View>
               )}
 
@@ -375,7 +435,7 @@ export default function JurnalMingguanScreen() {
 
               <View style={styles.rangeBox}>
                 <Ionicons name="calendar-outline" size={14} color="#2563EB" />
-                <Text style={styles.rangeText}>{detailItem?.range_tanggal}</Text>
+                <Text style={styles.rangeText}>{detailItem ? formatRangeIndonesia(detailItem.range_tanggal) : '-'}</Text>
               </View>
 
               <Text style={styles.inputLabel}>Kegiatan</Text>

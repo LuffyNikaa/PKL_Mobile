@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { useState, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
+import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -36,7 +37,19 @@ export default function JurnalHarianScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      loadAll();
+      const checkAuthAndLoad = async () => {
+        const token = await AsyncStorage.getItem('token');
+        if (!token) {
+          Alert.alert(
+            'Akses Dibatasi',
+            'Silakan login terlebih dahulu untuk mengakses Jurnal Harian.',
+            [{ text: 'OK', onPress: () => router.replace('/(tabs)/profil') }]
+          );
+          return;
+        }
+        loadAll();
+      };
+      checkAuthAndLoad();
     }, [])
   );
 
@@ -195,7 +208,7 @@ export default function JurnalHarianScreen() {
             activeOpacity={0.7}
           >
             <View style={styles.cardLeft}>
-              <Text style={styles.cardDate}>{item.tanggal_format}</Text>
+              <Text style={styles.cardDate}>{formatTanggalIndonesia(new Date(item.tanggal))}</Text>
               {item.bisa_edit && (
                 <View style={styles.editBadge}>
                   <Text style={styles.editBadgeText}>Bisa edit</Text>
@@ -223,7 +236,7 @@ export default function JurnalHarianScreen() {
               <Ionicons name="calendar-outline" size={14} color="#6B7280" />
               <Text style={styles.infoTanggalText}>
                 {editItem 
-                  ? `Tanggal: ${editItem.tanggal_format}`
+                  ? `Tanggal: ${formatTanggalIndonesia(new Date(editItem.tanggal))}`
                   : `Tanggal: ${formatTanggalIndonesia(new Date())}`}
               </Text>
             </View>
@@ -263,7 +276,7 @@ export default function JurnalHarianScreen() {
 
             <Text style={styles.inputLabel}>Tanggal</Text>
             <View style={styles.detailBox}>
-              <Text style={styles.detailText}>{detailItem?.tanggal_format}</Text>
+              <Text style={styles.detailText}>{detailItem ? formatTanggalIndonesia(new Date(detailItem.tanggal)) : '-'}</Text>
             </View>
 
             <Text style={styles.inputLabel}>Kegiatan</Text>
